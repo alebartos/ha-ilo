@@ -14,7 +14,7 @@ controllo dell'alimentazione tramite l'iLO.
 - **Pulsanti**: `Accendi`, `Spegni`, `Spegnimento forzato`, `Riavvio forzato`.
 - **Sensori binari**: `Acceso`, `Problema hardware`.
 - **Sensori**: `Consumo` (W), `Consumo medio`, `Consumo minimo/massimo` (disattivati),
-  `Ventole (media)`, `Stato hardware`, una entità per ogni ventola, temperatura,
+  `Ventole (media)`, `Tempo di accensione` (iLO 4+, via RIBCL), `Stato hardware`, una entità per ogni ventola, temperatura,
   tensione e alimentatore con soglie di attenzione/critiche come attributi.
   Le temperature secondarie e le tensioni sono create disattivate: attivale dalla pagina del dispositivo.
 

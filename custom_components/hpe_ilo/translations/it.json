@@ -88,6 +88,9 @@
       },
       "fan_avg": {
         "name": "Ventole (media)"
+      },
+      "power_on_time": {
+        "name": "Tempo di accensione"
       }
     }
   }

@@ -16,6 +16,7 @@ import re
 import threading
 import time
 from typing import Any
+from xml.sax.saxutils import quoteattr
 
 import aiohttp
 import paramiko
@@ -73,6 +74,7 @@ class IloData:
     power_min: float | None = None
     power_max: float | None = None
     uid_led: str | None = None
+    power_on_minutes: int | None = None  # tempo di accensione cumulativo (RIBCL, iLO 3+)
     temperatures: dict[str, Measurement] = field(default_factory=dict)
     voltages: dict[str, Measurement] = field(default_factory=dict)
     fans: dict[str, Measurement] = field(default_factory=dict)
@@ -241,6 +243,8 @@ class RedfishClient:
         self._session = session
         self._base = f"https://{host}"
         self._auth = aiohttp.BasicAuth(username, password)
+        self._username = username
+        self._password = password
 
     async def _request(
         self, method: str, path: str, payload: dict[str, Any] | None = None
@@ -273,13 +277,38 @@ class RedfishClient:
         return isinstance(root, dict) and "Systems" in root
 
     async def async_fetch(self) -> IloData:
-        system, thermal, power, manager = await asyncio.gather(
+        system, thermal, power, manager, minutes = await asyncio.gather(
             self._request("GET", "/redfish/v1/Systems/1/"),
             self._request("GET", "/redfish/v1/Chassis/1/Thermal/"),
             self._request("GET", "/redfish/v1/Chassis/1/Power/"),
             self._request("GET", "/redfish/v1/Managers/1/"),
+            self._power_on_minutes(),
         )
-        return parse_redfish(system, thermal, power, manager)
+        data = parse_redfish(system, thermal, power, manager)
+        data.power_on_minutes = minutes
+        return data
+
+    async def _power_on_minutes(self) -> int | None:
+        """Tempo di accensione cumulativo: Redfish non lo espone, si legge via RIBCL."""
+        xml = (
+            '<?xml version="1.0"?>\r\n<RIBCL VERSION="2.0">'
+            f"<LOGIN USER_LOGIN={quoteattr(self._username)} PASSWORD={quoteattr(self._password)}>"
+            '<SERVER_INFO MODE="read"><GET_SERVER_POWER_ON_TIME/></SERVER_INFO>'
+            "</LOGIN></RIBCL>\r\n"
+        )
+        try:
+            async with self._session.post(
+                self._base + "/ribcl",
+                data=xml,
+                headers={"Content-Type": "text/xml"},
+                ssl=False,
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                text = await resp.text()
+        except (aiohttp.ClientError, asyncio.TimeoutError):
+            return None
+        match = re.search(r'SERVER_POWER_ON_MINUTES VALUE="(\d+)"', text)
+        return int(match.group(1)) if match else None
 
     async def async_power(self, action: str) -> None:
         await self._request(

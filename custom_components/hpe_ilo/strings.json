@@ -88,6 +88,9 @@
       },
       "fan_avg": {
         "name": "Fan speed (average)"
+      },
+      "power_on_time": {
+        "name": "Power-on time"
       }
     }
   }
