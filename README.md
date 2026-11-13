@@ -40,7 +40,10 @@ server: OMV        # nome del server nell'integrazione (opzionale: il primo)
 mode: 3d           # 3d | 2d
 refresh: 30        # secondi
 max_rows: 12       # solo elenco (iLO senza mappa)
+spin: false        # vista 3D che ruota da sola
 ```
+
+Vista 3D: trascina in orizzontale per ruotare, in verticale per inclinare, doppio clic per tornare alla vista iniziale.
 
 ## Opzioni
 

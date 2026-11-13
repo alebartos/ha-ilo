@@ -10,6 +10,10 @@
  *   title: Temperature   # opzionale
  *   refresh: 30          # secondi tra un aggiornamento e l'altro
  *   max_rows: 12         # solo iLO senza mappa (iLO 2): righe dell'elenco
+ *   spin: false          # vista 3D che ruota da sola
+ *
+ * Vista 3D: trascina in orizzontale per ruotare, in verticale per inclinare,
+ * doppio clic per tornare alla vista iniziale.
  */
 
 const STOPS = [
@@ -73,7 +77,9 @@ class HpeIloThermalCard extends HTMLElement {
   setConfig(config) {
     this._config = { mode: "3d", refresh: 30, ...config };
     this._mode = this._config.mode === "2d" ? "2d" : "3d";
+    if (this._yaw === undefined) this._resetView();
     if (!this.shadowRoot) this._build();
+    this._syncSpin();
     if (this._hass) this._restart();
   }
 
@@ -83,7 +89,28 @@ class HpeIloThermalCard extends HTMLElement {
     if (first && this.isConnected) this._restart();
   }
 
+  _resetView() {
+    this._yaw = 0;
+    this._tilt = 0.5;
+  }
+
+  _syncSpin() {
+    const want = !!this._config.spin && this._mode === "3d" && this.isConnected;
+    if (want && !this._raf) {
+      const tick = () => {
+        if (!this._drag) this._yaw += 0.004;
+        this._draw();
+        this._raf = requestAnimationFrame(tick);
+      };
+      this._raf = requestAnimationFrame(tick);
+    } else if (!want && this._raf) {
+      cancelAnimationFrame(this._raf);
+      this._raf = null;
+    }
+  }
+
   connectedCallback() {
+    this._syncSpin();
     if (this._hass) this._restart();
     this._ro = new ResizeObserver(() => this._draw());
     this._ro.observe(this._wrap);
@@ -93,6 +120,8 @@ class HpeIloThermalCard extends HTMLElement {
     clearInterval(this._timer);
     this._timer = null;
     if (this._ro) this._ro.disconnect();
+    if (this._raf) cancelAnimationFrame(this._raf);
+    this._raf = null;
   }
 
   getCardSize() {
@@ -134,7 +163,9 @@ class HpeIloThermalCard extends HTMLElement {
           color: var(--secondary-text-color); cursor: pointer; }
         .toggle button.on { background: var(--primary-color); color: var(--text-primary-color, #fff); }
         .wrap { position: relative; width: 100%; margin-top: 8px; }
-        canvas { display: block; width: 100%; }
+        canvas { display: block; width: 100%; touch-action: pan-y; }
+        canvas.rot { cursor: grab; }
+        canvas.rot.dragging { cursor: grabbing; }
         .tip { position: absolute; pointer-events: none; display: none; z-index: 2;
           background: var(--card-background-color, #222); color: var(--primary-text-color);
           border: 1px solid var(--divider-color); border-radius: 10px; padding: 8px 10px;
@@ -175,11 +206,49 @@ class HpeIloThermalCard extends HTMLElement {
       const m = ev.target && ev.target.dataset && ev.target.dataset.m;
       if (m) {
         this._mode = m;
+        this._syncSpin();
         this._update();
       }
     });
-    this._canvas.addEventListener("mousemove", (ev) => this._hover(ev));
-    this._canvas.addEventListener("mouseleave", () => (this._tip.style.display = "none"));
+    const cv = this._canvas;
+    cv.addEventListener("pointerdown", (ev) => {
+      if (this._mode !== "3d") return;
+      this._drag = { x: ev.clientX, y: ev.clientY, moved: false };
+      cv.setPointerCapture(ev.pointerId);
+      cv.classList.add("dragging");
+    });
+    cv.addEventListener("pointermove", (ev) => {
+      if (!this._drag) return this._hover(ev);
+      const dx = ev.clientX - this._drag.x;
+      const dy = ev.clientY - this._drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 2) this._drag.moved = true;
+      this._drag.x = ev.clientX;
+      this._drag.y = ev.clientY;
+      this._yaw += dx * 0.01;
+      if (ev.pointerType === "mouse") this._tilt = Math.max(0.22, Math.min(0.9, this._tilt - dy * 0.004));
+      this._hintShown = true;
+      this._tip.style.display = "none";
+      if (!this._raf) this._draw();
+    });
+    const end = (ev) => {
+      if (!this._drag) return;
+      this._drag = null;
+      cv.classList.remove("dragging");
+      try {
+        cv.releasePointerCapture(ev.pointerId);
+      } catch (_e) {
+        /* già rilasciato */
+      }
+    };
+    cv.addEventListener("pointerup", end);
+    cv.addEventListener("pointercancel", end);
+    cv.addEventListener("dblclick", () => {
+      this._resetView();
+      this._draw();
+    });
+    cv.addEventListener("pointerleave", () => {
+      if (!this._drag) this._tip.style.display = "none";
+    });
   }
 
   _update() {
@@ -199,6 +268,7 @@ class HpeIloThermalCard extends HTMLElement {
       .filter(Boolean)
       .join(" · ");
     for (const b of this._toggle.querySelectorAll("button")) b.classList.toggle("on", b.dataset.m === this._mode);
+    this._canvas.classList.toggle("rot", this._mode === "3d");
     this._toggle.style.display = d.has_map ? "" : "none";
     this._wrap.style.display = d.has_map ? "" : "none";
     this._list.style.display = d.has_map ? "none" : "";
@@ -238,28 +308,8 @@ class HpeIloThermalCard extends HTMLElement {
     return groups;
   }
 
-  _draw() {
-    if (!this._data || !this._data.has_map || !this._canvas) return;
-    const width = this._wrap.clientWidth;
-    if (!width) return;
-    const is3d = this._mode === "3d";
-    const height = Math.round(width * (is3d ? 0.62 : 0.72));
-    const dpr = window.devicePixelRatio || 1;
-    const cv = this._canvas;
-    cv.width = Math.round(width * dpr);
-    cv.height = Math.round(height * dpr);
-    cv.style.height = `${height}px`;
-    const ctx = cv.getContext("2d");
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    const style = getComputedStyle(this._card);
-    const textColor = style.getPropertyValue("--primary-text-color").trim() || "#ddd";
-    const subColor = style.getPropertyValue("--secondary-text-color").trim() || "#999";
-    const groups = this._groups();
-    const N = Math.max(16, ...groups.map((g) => Math.max(g.x, g.y) + 1));
-
-    // campo di calore interpolato (IDW) sulla scheda
+  _computeField(groups, N) {
+    // campo di calore interpolato (IDW) sulla scheda, ricalcolato solo quando cambiano i dati
     const RES = 3; // sotto-celle per cella
     const M = N * RES;
     const field = [];
@@ -279,20 +329,69 @@ class HpeIloThermalCard extends HTMLElement {
         field[i].push(den ? num / den : 0);
       }
     }
+    return { RES, M, field };
+  }
 
+  _draw() {
+    if (!this._data || !this._data.has_map || !this._canvas) return;
+    const width = this._wrap.clientWidth;
+    if (!width) return;
+    const is3d = this._mode === "3d";
+    const height = Math.round(width * (is3d ? 0.66 : 0.72));
+    const dpr = window.devicePixelRatio || 1;
+    const cv = this._canvas;
+    if (cv.width !== Math.round(width * dpr) || cv.height !== Math.round(height * dpr)) {
+      cv.width = Math.round(width * dpr);
+      cv.height = Math.round(height * dpr);
+      cv.style.height = `${height}px`;
+    }
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    if (!this._cache || this._cache.data !== this._data) {
+      const style = getComputedStyle(this._card);
+      const groups = this._groups();
+      const N = Math.max(16, ...groups.map((g) => Math.max(g.x, g.y) + 1));
+      this._cache = {
+        data: this._data,
+        groups,
+        N,
+        ...this._computeField(groups, N),
+        textColor: style.getPropertyValue("--primary-text-color").trim() || "#ddd",
+        subColor: style.getPropertyValue("--secondary-text-color").trim() || "#999",
+      };
+    }
+    const c = this._cache;
     this._hits = [];
-    if (is3d) this._draw3d(ctx, width, height, N, RES, M, field, groups, textColor, subColor);
-    else this._draw2d(ctx, width, height, N, RES, M, field, groups, textColor, subColor);
+    if (is3d) this._draw3d(ctx, width, height, c.N, c.RES, c.M, c.field, c.groups, c.textColor, c.subColor);
+    else this._draw2d(ctx, width, height, c.N, c.RES, c.M, c.field, c.groups, c.textColor, c.subColor);
   }
 
   _draw3d(ctx, W, H, N, RES, M, field, groups, textColor, subColor) {
-    // proiezione isometrica; il fronte del server (y = 0, aria in ingresso) è verso chi guarda
-    const s = Math.min(W / (2 * N * 0.866 + 2), H / (N + 7.5));
+    // vista 3D girevole: yaw = rotazione attorno all'asse verticale, k = inclinazione
+    const yaw = this._yaw;
+    const k = this._tilt;
+    const hz = Math.sqrt(1 - k * k) / 0.866;
+    const cos = Math.cos(yaw);
+    const sin = Math.sin(yaw);
+    const ctr = (N - 1) / 2;
+    const BAR_MAX = 4.8;
+    const s = Math.min(W / (2 * N * 0.866 + 2), H / (2 * N * k + BAR_MAX * hz + 3));
     const cx = W / 2;
-    const top = H * 0.08 + 4.2 * s;
+    const cy = H / 2 + (BAR_MAX * hz * s) / 2;
+    const uv = (gx, gy) => {
+      const a = gx - ctr;
+      const b = N - 1 - gy - ctr; // fronte (y = 0) verso chi guarda
+      return [a * cos - b * sin, a * sin + b * cos];
+    };
     const P = (gx, gy, h = 0) => {
-      const fy = N - 1 - gy; // ribalta: fronte in basso
-      return [cx + (gx - fy) * 0.866 * s, top + (gx + fy) * 0.5 * s - h * s];
+      const [u, v] = uv(gx, gy);
+      return [cx + (u - v) * 0.866 * s, cy + (u + v) * k * s - h * hz * s];
+    };
+    const depth = (gx, gy) => {
+      const [u, v] = uv(gx, gy);
+      return u + v;
     };
     const quad = (pts, fill, stroke) => {
       ctx.beginPath();
@@ -309,13 +408,27 @@ class HpeIloThermalCard extends HTMLElement {
         ctx.stroke();
       }
     };
+    // luce: facce rivolte verso chi guarda/sinistra più chiare
+    const shadeOf = (nx, ny) => {
+      const [u, v] = [nx * cos - ny * sin, nx * sin + ny * cos];
+      return 0.55 + 0.3 * Math.max(-1, Math.min(1, (u + v) / 1.414)) * 0.5 + 0.15 * Math.max(0, -(u - v) / 1.414);
+    };
 
-    // spessore della scheda
+    // spessore della scheda (tutte le facce, dalla più lontana)
     const e = -0.5;
     const f = N - 0.5;
     const T = 0.45;
-    quad([P(e, e), P(f, e), P(f, e, -T), P(e, e, -T)], "rgba(60,70,80,0.55)");
-    quad([P(e, e), P(e, f), P(e, f, -T), P(e, e, -T)], "rgba(40,48,56,0.55)");
+    const edges = [
+      [[e, e], [f, e]],
+      [[f, e], [f, f]],
+      [[f, f], [e, f]],
+      [[e, f], [e, e]],
+    ]
+      .map(([p0, p1]) => ({ p0, p1, d: depth((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2) }))
+      .sort((a, b) => a.d - b.d);
+    for (const { p0, p1 } of edges) {
+      quad([P(...p0), P(...p1), P(...p1, -T), P(...p0, -T)], "rgba(45,55,65,0.7)");
+    }
 
     // mappa di calore
     const step = 1 / RES;
@@ -328,8 +441,8 @@ class HpeIloThermalCard extends HTMLElement {
     }
     quad([P(e, e), P(f, e), P(f, f), P(e, f)], null, "rgba(255,255,255,0.35)");
 
-    // colonnine: dal fondo verso chi guarda
-    const sorted = [...groups].sort((a, b) => a.x + (N - 1 - a.y) - (b.x + (N - 1 - b.y)));
+    // colonnine, dalla più lontana alla più vicina
+    const sorted = [...groups].sort((a, b) => depth(a.x, a.y) - depth(b.x, b.y));
     const r = 0.28;
     for (const g of sorted) {
       const h = 0.4 + Math.max(0, Math.min(1.2, g.t)) * 3.6;
@@ -337,9 +450,18 @@ class HpeIloThermalCard extends HTMLElement {
       const x1 = g.x + r;
       const y0 = g.y - r;
       const y1 = g.y + r;
-      // facce visibili: lato fronte (y0) e lato destro (x1)
-      quad([P(x0, y0), P(x1, y0), P(x1, y0, h), P(x0, y0, h)], colorAt(g.t, 1, 0.72));
-      quad([P(x1, y0), P(x1, y1), P(x1, y1, h), P(x1, y0, h)], colorAt(g.t, 1, 0.55));
+      const faces = [
+        { pts: [[x0, y0], [x1, y0]], n: [0, 1] }, // fronte (y minore = verso chi guarda)
+        { pts: [[x1, y0], [x1, y1]], n: [1, 0] },
+        { pts: [[x1, y1], [x0, y1]], n: [0, -1] },
+        { pts: [[x0, y1], [x0, y0]], n: [-1, 0] },
+      ]
+        .map((fc) => ({ ...fc, d: depth((fc.pts[0][0] + fc.pts[1][0]) / 2, (fc.pts[0][1] + fc.pts[1][1]) / 2) }))
+        .sort((a, b) => a.d - b.d);
+      for (const fc of faces) {
+        const [a, b] = fc.pts;
+        quad([P(...a), P(...b), P(...b, h), P(...a, h)], colorAt(g.t, 1, shadeOf(fc.n[0], fc.n[1])));
+      }
       quad([P(x0, y0, h), P(x1, y0, h), P(x1, y1, h), P(x0, y1, h)], colorAt(g.t, 1, 1.08), "rgba(255,255,255,0.5)");
       const [tx, ty] = P(g.x, g.y, h);
       this._hits.push({ x: tx, y: ty, r: Math.max(10, s * 0.6), g });
@@ -354,14 +476,19 @@ class HpeIloThermalCard extends HTMLElement {
       ctx.fillText(`${hit.g.value.toFixed(0)}°`, hit.x, hit.y - 4);
     }
 
-    // orientamento
+    // orientamento: etichette sul bordo anteriore e posteriore
     ctx.font = `${Math.max(9, Math.round(s * 0.5))}px system-ui, sans-serif`;
     ctx.fillStyle = subColor;
     ctx.textBaseline = "middle";
-    const [fx, fy] = P((N - 1) / 2, -0.5);
-    ctx.fillText("▼ fronte · aria in ingresso", fx + 3.2 * s, fy + 1.4 * s);
-    const [bx, by] = P((N - 1) / 2, N - 0.5);
-    ctx.fillText("retro · scarico ▲", bx - 3.2 * s, by - 1.2 * s);
+    const [fx, fy] = P(ctr, -1.6);
+    ctx.fillText("fronte · ingresso aria", fx, fy);
+    const [bx, by] = P(ctr, N + 0.6);
+    ctx.fillText("retro · scarico", bx, by);
+    if (!this._hintShown) {
+      ctx.textAlign = "right";
+      ctx.textBaseline = "top";
+      ctx.fillText("trascina per ruotare · doppio clic per tornare", W - 4, 4);
+    }
   }
 
   _draw2d(ctx, W, H, N, RES, M, field, groups, textColor, subColor) {
