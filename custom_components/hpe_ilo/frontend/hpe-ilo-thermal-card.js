@@ -535,7 +535,7 @@ class HpeIloThermalCard extends HTMLElement {
   }
 
   _buildModel(N) {
-    // componenti (box in mm) ricavati da nomi e coordinate dei sensori; calcolato solo al cambio dati
+    // componenti (box in mm) da nomi e coordinate dei sensori
     const X = (gx) => ((gx + 0.5) / N) * MW;
     const Y = (gy) => mapY(gy, N);
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -588,13 +588,15 @@ class HpeIloThermalCard extends HTMLElement {
     }
     // alimentatori sul retro
     const ps = take(/^P\/S \d+$/).sort((a, b) => num(a) - num(b));
+    let psEnd = 4; // bordo interno degli alimentatori (mm): il riser 2 sta subito accanto
     if (ps.length) {
-      const st = clamp(X(ps.reduce((a, s) => a + s.x, 0) / ps.length) - ps.length * 28, 4, MW - 4 - ps.length * 56);
-      ps.forEach((s, i) => add(`Alimentatore ${num(s)}`, [s], [B(st + i * 56, st + i * 56 + 54, MD - 214, MD - 4, 4, 44, "psu")]));
+      // a sinistra guardando dal fronte, uno sopra l'altro
+      const st = clamp(X(ps.reduce((a, s) => a + s.x, 0) / ps.length) - 50, 4, MW - 104);
+      ps.forEach((s, i) => add(`Alimentatore ${num(s)}`, [s], [B(st, st + 100, MD - 214, MD - 4, 4 + (i % 2) * 42, 42 + (i % 2) * 42, "psu")]));
+      psEnd = st + 100;
     }
-    // riser PCIe: schede orizzontali impilate (slot 1-3 riser 1, 4-6 riser 2, slot più basso in basso).
-    // Slot occupato: dall'elenco "pci" dell'integrazione, altrimenti dal sensore della scheda "PCI n".
-    // Temperatura: "PCI n", se manca "PCI n Zone", se manca anche quella "System Board" (stimata).
+    // riser: slot 1-3 / 4-6 dall'alto; occupato secondo "pci" o sensore "PCI n";
+    // temperatura PCI n > PCI n Zone > System Board (stimata)
     const pci = take(/^PCI \d+/);
     const info = new Map((this._data.pci || []).map((p) => [p.slot, p]));
     const board = free.find((s) => /^System Board$/i.test(s.name));
@@ -605,28 +607,36 @@ class HpeIloThermalCard extends HTMLElement {
       risers.get(r).push(n);
     }
     for (const [r, list] of risers) {
-      const own = pci.filter((s) => list.includes(num(s)));
-      const x1 = clamp(X(own.length ? own.reduce((a, s) => a + s.x, 0) / own.length : r === 1 ? 13 : 7) + 40, 124, MW - 6);
-      const x0 = x1 - 114;
-      add(null, [], [B(x1 - 5, x1, MD - 160, MD - 24, 4, 80, "riser")], { alpha: 0.4 });
+      // dal fronte: riser 1 a destra, riser 2 al centro accanto agli alimentatori
+      const x0 = r === 1 ? MW - 136 : clamp(psEnd + 4, 4, MW - 290);
+      const x1 = x0 + (r === 1 ? 130 : 150);
+      // gabbia a L: piastra superiore a L, staffa posteriore e levette blu (semitrasparente)
+      const C = (rgb, ...a) => Object.assign(B(...a), { rgb });
+      add(`Riser ${r}`, [], [
+        C([38, 42, 50], x0, x0 + 40, MD - 240, MD - 4, 82, 85, "rcage"),
+        C([38, 42, 50], x0 + 40, x1, MD - 44, MD - 4, 82, 85, "rcage"),
+        C([150, 156, 165], x0 + 3, x1, MD - 6, MD - 3, 4, 82, "rcage"),
+        C([40, 110, 230], x1 - 12, x1, MD - 16, MD - 4, 56, 90, "rcage"),
+        C([40, 110, 230], x0, x0 + 14, MD - 244, MD - 232, 74, 92, "rcage"),
+      ], { alpha: 0.65 });
       for (const n of list) {
         const p = info.get(n);
         const sens = pci.filter((s) => num(s) === n).sort((a, b) => /Zone/i.test(a.name) - /Zone/i.test(b.name));
         const card = sens.find((s) => !/Zone/i.test(s.name));
         const used = p ? !!p.in_use : !!card;
-        const z = 10 + ((n - 1) % 3) * 24;
+        const z = 22 + (2 - ((n - 1) % 3)) * 21; // slot numerati dall'alto (1 in alto, 3 in basso)
         const desc = [p && p.device, p && p.lanes].filter(Boolean).join(" ");
         if (used) {
           const est = !card;
           const use = est && !sens.length && board ? [board] : sens;
-          const len = p && /short/i.test(p.length || "") ? 125 : 175;
+          const len = p && /short/i.test(p.length || "") ? 150 : 215;
           const ym = MD - 8 - len / 2;
           add(`Slot PCI ${n}${desc ? ` · ${desc}` : ""}${est ? " · temperatura stimata" : ""}`, use.slice(0, 1), [
-            B(x0, x1 - 5, MD - 8 - len, MD - 8, z, z + 4, "card"),
-            B(x0 + 24, x0 + 56, ym - 16, ym + 16, z + 4, z + 11, "card"),
+            B(x0 + 3, x1 - 2, MD - 8 - len, MD - 8, z, z + 4, "card"),
+            B(x0 + 50, x0 + 82, ym - 16, ym + 16, z + 4, z + 11, "card"),
           ], { noHost: true, est, more: use.slice(1) });
         } else {
-          add(`Slot PCI ${n} · vuoto`, sens.slice(0, 1), [B(x1 - 12, x1 - 5, MD - 150, MD - 40, z - 2, z + 6, "slot")], {
+          add(`Slot PCI ${n} · vuoto`, sens.slice(0, 1), [B(x0 + 3, x0 + 10, MD - 200, MD - 40, z - 2, z + 6, "slot")], {
             noHost: true,
           });
         }
@@ -679,12 +689,17 @@ class HpeIloThermalCard extends HTMLElement {
     return { comps, boxes, ex, ey, orders: {} };
   }
 
-  _order(m, ga, gb) {
-    // ordine del pittore tra box allineati agli assi: piano separatore, poi altezza; dipende solo
-    // dal quadrante di vista, quindi è calcolato al più 4 volte
-    const key = `${ga >= 0 ? 1 : 0}${gb >= 0 ? 1 : 0}`;
-    if (m.orders[key]) return m.orders[key];
+  _order(m, ga, gb, P, key) {
+    // ordine del pittore: piano separatore o altezza, solo tra box sovrapposti a video
+    if (m.orders.key === key) return m.orders.order;
     const bx = m.boxes;
+    const rect = bx.map((b) => {
+      const q = [];
+      for (const x of [b.x0, b.x1]) for (const y of [b.y0, b.y1]) for (const z of [b.z0, b.z1]) q.push(P(x, y, z));
+      const u = q.map((p) => p[0]);
+      const v = q.map((p) => p[1]);
+      return [Math.min(...u), Math.min(...v), Math.max(...u), Math.max(...v)];
+    });
     const n = bx.length;
     const sep = (A, B) => {
       if (A.a1 <= B.a0) return ga >= 0 ? -1 : 1;
@@ -699,6 +714,9 @@ class HpeIloThermalCard extends HTMLElement {
     const out = bx.map(() => []);
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
+        const p = rect[i];
+        const q = rect[j];
+        if (p[2] <= q[0] || q[2] <= p[0] || p[3] <= q[1] || q[3] <= p[1]) continue;
         const r = sep(bx[i], bx[j]);
         if (r < 0) {
           out[i].push(j);
@@ -722,7 +740,8 @@ class HpeIloThermalCard extends HTMLElement {
       order.push(bx[best]);
       for (const j of out[best]) indeg[j]--;
     }
-    return (m.orders[key] = order);
+    m.orders = { key, order };
+    return order;
   }
 
   _drawModel(ctx, W, H, c) {
@@ -765,6 +784,8 @@ class HpeIloThermalCard extends HTMLElement {
       const v = na * sin + nb * cos;
       return 0.55 + 0.3 * Math.max(-1, Math.min(1, (u + v) / 1.414)) * 0.5 + 0.15 * Math.max(0, -(u - v) / 1.414);
     };
+    const paint = (b, a, sh) =>
+      b.rgb ? `rgba(${b.rgb.map((v) => Math.min(255, Math.round(v * sh))).join(",")},${a})` : col(b.c.t, a, sh);
     const col = (t, a, sh) => {
       if (t != null) return colorAt(t, a, sh);
       const g = Math.round(105 * sh);
@@ -809,7 +830,7 @@ class HpeIloThermalCard extends HTMLElement {
     poly([P(0, 0), P(MW, 0), P(MW, MD), P(0, MD)], null, "rgba(255,255,255,0.3)");
 
     // componenti, dal più lontano al più vicino
-    for (const b of this._order(m, ga, gb)) {
+    for (const b of this._order(m, ga, gb, P, `${this._yaw},${k},${W},${H}`)) {
       const cp = b.c;
       const { x0, x1, y0, y1, z0, z1 } = b;
       const alpha = cp.alpha || (cp.ghost ? 0.1 : 1);
@@ -821,12 +842,12 @@ class HpeIloThermalCard extends HTMLElement {
       if (gb < 0) faces.push([[x0, y1], [x1, y1], 0, -1]);
       for (const [p0, p1, na, nb] of faces) {
         const q = [P(...p0, z0), P(...p1, z0), P(...p1, z1), P(...p0, z1)];
-        poly(q, col(cp.t, alpha, shadeOf(na, nb) * (b.kind === "fan" ? 0.75 : 1)), edge, 0.6);
+        poly(q, paint(b, alpha, shadeOf(na, nb) * (b.kind === "fan" ? 0.75 : 1)), edge, 0.6);
         if (cp.g) this._hits.push({ poly: q, g: cp.g });
       }
       const top = [P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)];
       if (cp.est) ctx.setLineDash([4, 3]); // temperatura stimata: bordo tratteggiato
-      poly(top, col(cp.t, alpha, b.kind === "fan" ? 0.8 : 1.08), cp.ghost ? edge : cp.est ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.4)", 0.8);
+      poly(top, paint(b, alpha, b.kind === "fan" ? 0.8 : 1.08), cp.ghost ? edge : cp.est ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.4)", 0.8);
       ctx.setLineDash([]);
       if (cp.g) this._hits.push({ poly: top, g: cp.g });
 
@@ -865,7 +886,7 @@ class HpeIloThermalCard extends HTMLElement {
     ctx.font = `${Math.max(9, Math.round(su * 0.5))}px system-ui, sans-serif`;
     ctx.fillStyle = c.subColor;
     ctx.textBaseline = "middle";
-    // lato verso chi guarda: a terra; lato lontano: sopra i componenti, per non sovrapporsi
+    // lato vicino: a terra; lato lontano: sopra i componenti
     const [fx, fy] = gb > -0.5 ? P(MW / 2, -110) : P(MW / 2, -30, MH + 20);
     ctx.fillText("fronte · ingresso aria", fx, fy);
     const [bx, by] = gb < 0.5 ? P(MW / 2, MD + 80) : P(MW / 2, MD + 20, MH + 20);
