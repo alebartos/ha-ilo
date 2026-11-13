@@ -544,8 +544,10 @@ class SshClient:
                 out = shell.run(SSH_COMMANDS[action])
             finally:
                 shell.close()
+        # L'iLO 2 in sessione interattiva esegue "power ..." senza stampare "status=0":
+        # è un errore solo se riporta uno status diverso da 0 o un errore esplicito.
         text = clean_output(out)
-        if "status=0" not in text and "status_tag=COMMAND COMPLETED" not in text:
+        if re.search(r"status=[1-9]", text) or re.search(r"FAILED|error_tag=|Invalid", text, re.I):
             raise IloError(f"Comando '{SSH_COMMANDS[action]}' rifiutato: {text.strip()[-200:]}")
 
     async def async_probe(self) -> bool:

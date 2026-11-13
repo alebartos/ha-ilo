@@ -42,9 +42,16 @@ refresh: 30        # secondi
 max_rows: 0        # righe dell'elenco (0 = tutte, con scorrimento)
 mobile_list: true  # su telefono mostra l'elenco al posto della mappa
 spin: false        # vista 3D che ruota da sola
+model: true        # vista 3D: modello stilizzato del server (false = colonnine)
 ```
 
 Vista 3D: trascina in orizzontale per ruotare, in verticale per inclinare, doppio clic per tornare alla vista iniziale.
+
+Nella vista 3D la card disegna un modello stilizzato del server (telaio 2U da 445 × 690 mm, gabbia dischi,
+6 ventole, dissipatori CPU, banchi DIMM, schede PCI e alimentatori), con ogni componente colorato dalla
+temperatura del suo sensore e la mappa di calore sul fondo. Il modello è disegnato da zero con forme
+semplici (proporzioni di un ProLiant DL380p Gen8) e i componenti sono posizionati in base a nomi e
+coordinate dei sensori iLO. Con `model: false` torna la vista a colonnine.
 
 ## Opzioni
 
