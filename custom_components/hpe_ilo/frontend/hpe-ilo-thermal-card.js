@@ -224,8 +224,8 @@ class HpeIloThermalCard extends HTMLElement {
       if (Math.abs(dx) + Math.abs(dy) > 2) this._drag.moved = true;
       this._drag.x = ev.clientX;
       this._drag.y = ev.clientY;
-      this._yaw += dx * 0.01;
-      if (ev.pointerType === "mouse") this._tilt = Math.max(0.22, Math.min(0.9, this._tilt - dy * 0.004));
+      this._yaw -= dx * 0.01;
+      if (ev.pointerType === "mouse") this._tilt = Math.max(0.22, Math.min(0.9, this._tilt + dy * 0.004));
       this._hintShown = true;
       this._tip.style.display = "none";
       if (!this._raf) this._draw();
