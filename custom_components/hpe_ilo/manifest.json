@@ -1,12 +1,21 @@
 {
   "domain": "hpe_ilo",
   "name": "HP iLO",
-  "codeowners": ["@alebartos"],
+  "codeowners": [
+    "@alebartos"
+  ],
   "config_flow": true,
+  "dependencies": [
+    "frontend",
+    "http",
+    "websocket_api"
+  ],
   "documentation": "https://github.com/alebartos/ha-ilo",
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/alebartos/ha-ilo/issues",
-  "requirements": ["paramiko>=3.0.0"],
-  "version": "0.1.2"
+  "requirements": [
+    "paramiko>=3.0.0"
+  ],
+  "version": "0.2.0"
 }

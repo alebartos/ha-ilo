@@ -178,6 +178,7 @@ def parse_redfish(
         raw_name = _strip(item.get("Name")) or f"Sensor {item.get('Number')}"
         name = re.sub(r"^\d+-", "", raw_name)
         key = slugify(raw_name)
+        hp = (item.get("Oem") or {}).get("Hp") or {}
         data.temperatures[key] = Measurement(
             key=key,
             name=name,
@@ -186,7 +187,12 @@ def parse_redfish(
             caution=_threshold(item.get("UpperThresholdCritical")),
             critical=_threshold(item.get("UpperThresholdFatal")),
             primary=bool(_PRIMARY_TEMP_RE.search(name)),
-            extra={"posizione": item.get("PhysicalContext")},
+            # posizione sulla scheda (griglia 16x16 dell'iLO 4, usata dalla card termica)
+            extra={
+                "posizione": item.get("PhysicalContext"),
+                "x": hp.get("LocationXmm"),
+                "y": hp.get("LocationYmm"),
+            },
         )
 
     for item in thermal.get("Fans") or []:

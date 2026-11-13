@@ -27,6 +27,21 @@ controllo dell'alimentazione tramite l'iLO.
 
 Consiglio: crea sull'iLO un utente dedicato con i soli privilegi *Login* e *Virtual Power and Reset*.
 
+## Card mappa termica
+
+L'integrazione carica da sola la card `custom:hpe-ilo-thermal-card` (nessuna risorsa da aggiungere):
+mostra i sensori di temperatura sulla scheda madre in **3D** o **2D**, colorati in base alla distanza
+dalla soglia di attenzione. Passando sopra a un sensore compaiono nome, valore e soglie.
+Su iLO senza coordinate dei sensori (iLO 2) mostra un elenco a barre.
+
+```yaml
+type: custom:hpe-ilo-thermal-card
+server: OMV        # nome del server nell'integrazione (opzionale: il primo)
+mode: 3d           # 3d | 2d
+refresh: 30        # secondi
+max_rows: 12       # solo elenco (iLO senza mappa)
+```
+
 ## Opzioni
 
 Intervallo di aggiornamento (default 60 s Redfish, 120 s SSH, minimo 30 s).

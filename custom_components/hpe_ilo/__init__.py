@@ -2,18 +2,42 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.typing import ConfigType
+from homeassistant.loader import async_get_integration
 
+from . import websocket
 from .api import RedfishClient, SshClient
-from .const import CONF_PROTOCOL, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, PROTOCOL_REDFISH
+from .const import CONF_PROTOCOL, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, DOMAIN, PROTOCOL_REDFISH
 from .coordinator import IloCoordinator
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.SENSOR, Platform.SWITCH]
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+CARD_URL = f"/{DOMAIN}/hpe-ilo-thermal-card.js"
+CARD_PATH = Path(__file__).parent / "frontend" / "hpe-ilo-thermal-card.js"
 
 IloConfigEntry = ConfigEntry[IloCoordinator]
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Registra la card termica e i comandi websocket (una volta sola)."""
+    websocket.async_register(hass)
+    integration = await async_get_integration(hass, DOMAIN)
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(CARD_URL, str(CARD_PATH), False)]
+    )
+    # caricata automaticamente in tutte le dashboard, niente risorsa da aggiungere a mano
+    add_extra_js_url(hass, f"{CARD_URL}?v={integration.version}")
+    return True
 
 
 def create_client(hass: HomeAssistant, data: dict) -> RedfishClient | SshClient:
