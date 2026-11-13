@@ -1,5 +1,7 @@
 # HP iLO per Home Assistant
 
+> **English summary.** Custom Home Assistant integration for HP/HPE ProLiant servers. It talks to the iLO over Redfish (iLO 4 firmware 2.30+ and iLO 5+) or SSH/SMASH CLP (iLO 2, iLO 3 and older iLO 4), and exposes power control, power draw, fans, temperatures, voltages and power supplies as entities. It also ships a Lovelace card that draws the server's temperature sensors on a 3D or 2D model of the chassis. Installable via HACS. MIT licensed.
+
 Integrazione custom per i server HP/HPE ProLiant: stato, sensori hardware e
 controllo dell'alimentazione tramite l'iLO.
 
