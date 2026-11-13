@@ -1,0 +1,94 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HP iLO",
+        "description": "Indirizzo e credenziali dell'iLO. L'integrazione usa Redfish se disponibile (iLO 4 2.30+, iLO 5), altrimenti SSH (iLO 2/3).",
+        "data": {
+          "host": "Indirizzo",
+          "username": "Utente",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Aggiorna le credenziali iLO",
+        "data": {
+          "username": "Utente",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossibile collegarsi all'iLO",
+      "invalid_auth": "Credenziali non valide",
+      "unknown": "Errore inatteso"
+    },
+    "abort": {
+      "already_configured": "Questo server è già configurato",
+      "reauth_successful": "Credenziali aggiornate"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "Intervallo di aggiornamento (secondi)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "power_state": {
+        "name": "Acceso"
+      },
+      "problem": {
+        "name": "Problema hardware"
+      }
+    },
+    "switch": {
+      "power": {
+        "name": "Alimentazione"
+      }
+    },
+    "button": {
+      "power_on": {
+        "name": "Accendi"
+      },
+      "shutdown": {
+        "name": "Spegni"
+      },
+      "force_off": {
+        "name": "Spegnimento forzato"
+      },
+      "reset": {
+        "name": "Riavvio forzato"
+      }
+    },
+    "sensor": {
+      "power": {
+        "name": "Consumo"
+      },
+      "power_avg": {
+        "name": "Consumo medio"
+      },
+      "power_min": {
+        "name": "Consumo minimo"
+      },
+      "power_max": {
+        "name": "Consumo massimo"
+      },
+      "health": {
+        "name": "Stato hardware",
+        "state": {
+          "ok": "OK",
+          "warning": "Attenzione",
+          "critical": "Critico"
+        }
+      },
+      "fan_avg": {
+        "name": "Ventole (media)"
+      }
+    }
+  }
+}

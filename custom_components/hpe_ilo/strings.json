@@ -1,0 +1,94 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HP iLO",
+        "description": "Address and credentials of the iLO. The integration uses Redfish when available (iLO 4 2.30+, iLO 5) and falls back to SSH (iLO 2/3).",
+        "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Update iLO credentials",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the iLO",
+      "invalid_auth": "Invalid credentials",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This server is already configured",
+      "reauth_successful": "Credentials updated"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "Update interval (seconds)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "power_state": {
+        "name": "Powered on"
+      },
+      "problem": {
+        "name": "Health problem"
+      }
+    },
+    "switch": {
+      "power": {
+        "name": "Power"
+      }
+    },
+    "button": {
+      "power_on": {
+        "name": "Power on"
+      },
+      "shutdown": {
+        "name": "Shut down"
+      },
+      "force_off": {
+        "name": "Force off"
+      },
+      "reset": {
+        "name": "Force restart"
+      }
+    },
+    "sensor": {
+      "power": {
+        "name": "Power consumption"
+      },
+      "power_avg": {
+        "name": "Average power"
+      },
+      "power_min": {
+        "name": "Minimum power"
+      },
+      "power_max": {
+        "name": "Maximum power"
+      },
+      "health": {
+        "name": "Health",
+        "state": {
+          "ok": "OK",
+          "warning": "Warning",
+          "critical": "Critical"
+        }
+      },
+      "fan_avg": {
+        "name": "Fan speed (average)"
+      }
+    }
+  }
+}
