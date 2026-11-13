@@ -79,6 +79,8 @@ class IloData:
     voltages: dict[str, Measurement] = field(default_factory=dict)
     fans: dict[str, Measurement] = field(default_factory=dict)
     power_supplies: dict[str, Measurement] = field(default_factory=dict)
+    # slot PCIe (Redfish iLO 4/5): {slot, in_use, length, lanes, device}
+    pci_slots: list[dict[str, Any]] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- utilità
@@ -238,6 +240,12 @@ def parse_redfish(
     return data
 
 
+def _members(collection: Any) -> list[str]:
+    """Percorsi dei membri di una collezione Redfish."""
+    members = (collection or {}).get("Members") if isinstance(collection, dict) else None
+    return [m["@odata.id"] for m in members or [] if isinstance(m, dict) and "@odata.id" in m]
+
+
 class RedfishClient:
     """Client Redfish asincrono."""
 
@@ -251,6 +259,8 @@ class RedfishClient:
         self._auth = aiohttp.BasicAuth(username, password)
         self._username = username
         self._password = password
+        self._pci: list[dict[str, Any]] = []
+        self._pci_time = 0.0
 
     async def _request(
         self, method: str, path: str, payload: dict[str, Any] | None = None
@@ -292,7 +302,51 @@ class RedfishClient:
         )
         data = parse_redfish(system, thermal, power, manager)
         data.power_on_minutes = minutes
+        data.pci_slots = await self._pci_slots()
         return data
+
+    async def _pci_slots(self) -> list[dict[str, Any]]:
+        """Slot PCIe occupati/vuoti e tipo di scheda; cambiano solo a server spento,
+        quindi si rileggono al massimo una volta l'ora. Errori: si tiene l'ultimo elenco."""
+        if self._pci_time and time.monotonic() - self._pci_time < 3600:
+            return self._pci
+        self._pci_time = time.monotonic()
+        try:
+            slots_col, devs_col = await asyncio.gather(
+                self._request("GET", "/redfish/v1/Systems/1/PCISlots/"),
+                self._request("GET", "/redfish/v1/Systems/1/PCIDevices/"),
+            )
+            slot_paths = _members(slots_col)
+            dev_paths = _members(devs_col)
+            items = await asyncio.gather(*(self._request("GET", p) for p in slot_paths + dev_paths))
+        except IloError:
+            return self._pci
+        slots, devices = items[: len(slot_paths)], items[len(slot_paths) :]
+        result = []
+        for slot in slots:
+            match = re.search(r"(\d+)\s*$", str(slot.get("Name") or slot.get("Id") or ""))
+            if not match:
+                continue
+            name = _strip(slot.get("Name"))
+            ops = (slot.get("Status") or {}).get("OperationalStatus") or []
+            in_use = any(str(o.get("Status")).lower() == "inuse" for o in ops if isinstance(o, dict))
+            # tipo della scheda: dispositivo con lo stesso bus della voce "PCI-E Slot n"
+            bus = next((d.get("BusNumber") for d in devices if name and d.get("DeviceLocation") == name), None)
+            kind = next(
+                (d.get("DeviceType") for d in devices if bus is not None and d.get("BusNumber") == bus and d.get("DeviceType")),
+                None,
+            )
+            result.append(
+                {
+                    "slot": int(match.group(1)),
+                    "in_use": in_use,
+                    "length": _strip(slot.get("Length")),
+                    "lanes": _strip(slot.get("LinkLanes")),
+                    "device": _strip(kind),
+                }
+            )
+        self._pci = sorted(result, key=lambda s: s["slot"])
+        return self._pci
 
     async def _power_on_minutes(self) -> int | None:
         """Tempo di accensione cumulativo: Redfish non lo espone, si legge via RIBCL."""

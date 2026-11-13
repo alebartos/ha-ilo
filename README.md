@@ -53,6 +53,11 @@ temperatura del suo sensore e la mappa di calore sul fondo. Il modello è disegn
 semplici (proporzioni di un ProLiant DL380p Gen8) e i componenti sono posizionati in base a nomi e
 coordinate dei sensori iLO. Con `model: false` torna la vista a colonnine.
 
+Le schede PCIe sono disegnate orizzontali nel riser, solo negli slot occupati (letti da Redfish
+`PCISlots`/`PCIDevices`, iLO 4 e successivi), con il tipo di scheda nel tooltip. Se la scheda non
+espone una sua temperatura (`PCI n`) si usa quella della zona dello slot (`PCI n Zone`) o della scheda
+madre, indicata come stimata e con il bordo tratteggiato. Gli slot vuoti appaiono come connettori.
+
 ## Opzioni
 
 Intervallo di aggiornamento (default 60 s Redfish, 120 s SSH, minimo 30 s).

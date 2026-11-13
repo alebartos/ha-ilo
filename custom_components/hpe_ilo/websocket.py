@@ -76,6 +76,7 @@ def ws_thermal(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
             "power_on": data.power_on,
             "has_map": any(s["x"] is not None and s["y"] is not None for s in sensors),
             "sensors": sensors,
+            "pci": list(getattr(data, "pci_slots", None) or []),
             "last_update_success": entry.runtime_data.last_update_success,
         },
     )

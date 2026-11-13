@@ -592,18 +592,48 @@ class HpeIloThermalCard extends HTMLElement {
       const st = clamp(X(ps.reduce((a, s) => a + s.x, 0) / ps.length) - ps.length * 28, 4, MW - 4 - ps.length * 56);
       ps.forEach((s, i) => add(`Alimentatore ${num(s)}`, [s], [B(st + i * 56, st + i * 56 + 54, MD - 214, MD - 4, 4, 44, "psu")]));
     }
-    // schede PCI sul riser (una per numero di slot)
+    // riser PCIe: schede orizzontali impilate (slot 1-3 riser 1, 4-6 riser 2, slot più basso in basso).
+    // Slot occupato: dall'elenco "pci" dell'integrazione, altrimenti dal sensore della scheda "PCI n".
+    // Temperatura: "PCI n", se manca "PCI n Zone", se manca anche quella "System Board" (stimata).
     const pci = take(/^PCI \d+/);
-    if (pci.length) {
-      const slots = [...new Set(pci.map(num))].sort((a, b) => a - b);
-      const xr = clamp(X(pci.reduce((a, s) => a + s.x, 0) / pci.length) - 20, 30 + slots.length * 11, MW - 30 - slots.length * 11);
-      slots.forEach((n, i) => {
-        const cx = xr + (i - (slots.length - 1) / 2) * 22;
-        add(`Slot PCI ${n}`, pci.filter((s) => num(s) === n), [B(cx - 2.5, cx + 2.5, MD - 190, MD - 12, 10, 76, "card")]);
-      });
+    const info = new Map((this._data.pci || []).map((p) => [p.slot, p]));
+    const board = free.find((s) => /^System Board$/i.test(s.name));
+    const risers = new Map();
+    for (const n of [...new Set([...pci.map(num), ...info.keys()])].sort((a, b) => a - b)) {
+      const r = Math.ceil(n / 3);
+      if (!risers.has(r)) risers.set(r, []);
+      risers.get(r).push(n);
+    }
+    for (const [r, list] of risers) {
+      const own = pci.filter((s) => list.includes(num(s)));
+      const x1 = clamp(X(own.length ? own.reduce((a, s) => a + s.x, 0) / own.length : r === 1 ? 13 : 7) + 40, 124, MW - 6);
+      const x0 = x1 - 114;
+      add(null, [], [B(x1 - 5, x1, MD - 160, MD - 24, 4, 80, "riser")], { alpha: 0.4 });
+      for (const n of list) {
+        const p = info.get(n);
+        const sens = pci.filter((s) => num(s) === n).sort((a, b) => /Zone/i.test(a.name) - /Zone/i.test(b.name));
+        const card = sens.find((s) => !/Zone/i.test(s.name));
+        const used = p ? !!p.in_use : !!card;
+        const z = 10 + ((n - 1) % 3) * 24;
+        const desc = [p && p.device, p && p.lanes].filter(Boolean).join(" ");
+        if (used) {
+          const est = !card;
+          const use = est && !sens.length && board ? [board] : sens;
+          const len = p && /short/i.test(p.length || "") ? 125 : 175;
+          const ym = MD - 8 - len / 2;
+          add(`Slot PCI ${n}${desc ? ` · ${desc}` : ""}${est ? " · temperatura stimata" : ""}`, use.slice(0, 1), [
+            B(x0, x1 - 5, MD - 8 - len, MD - 8, z, z + 4, "card"),
+            B(x0 + 24, x0 + 56, ym - 16, ym + 16, z + 4, z + 11, "card"),
+          ], { noHost: true, est, more: use.slice(1) });
+        } else {
+          add(`Slot PCI ${n} · vuoto`, sens.slice(0, 1), [B(x1 - 12, x1 - 5, MD - 150, MD - 40, z - 2, z + 6, "slot")], {
+            noHost: true,
+          });
+        }
+      }
     }
     // altri sensori: dentro un componente -> nel suo tooltip, altrimenti un chip sulla scheda
-    const hosts = comps.filter((c) => c.sensors.length);
+    const hosts = comps.filter((c) => c.sensors.length && !c.noHost);
     const chips = new Map();
     for (const s of free) {
       const x = X(s.x);
@@ -630,7 +660,7 @@ class HpeIloThermalCard extends HTMLElement {
       add(g.list.map((s) => s.name).join(", "), g.list, [B(x0, x0 + w, y0, y0 + d, 2, 2 + h, "chip")]);
     }
     for (const c of comps) {
-      const all = [...c.sensors, ...c.extra].sort((a, b) => heat(b) - heat(a));
+      const all = [...c.sensors, ...(c.more || []), ...c.extra].sort((a, b) => heat(b) - heat(a));
       const solo = c.sensors.length === 1 && !c.extra.length && c.sensors[0].name === c.title;
       c.g = all.length ? { title: solo ? null : c.title, sensors: all } : null;
       const b = c.boxes;
@@ -782,7 +812,7 @@ class HpeIloThermalCard extends HTMLElement {
     for (const b of this._order(m, ga, gb)) {
       const cp = b.c;
       const { x0, x1, y0, y1, z0, z1 } = b;
-      const alpha = cp.ghost ? 0.1 : 1;
+      const alpha = cp.alpha || (cp.ghost ? 0.1 : 1);
       const edge = cp.ghost ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.35)";
       const faces = [];
       if (ga < 0) faces.push([[x0, y0], [x0, y1], -1, 0]);
@@ -795,7 +825,9 @@ class HpeIloThermalCard extends HTMLElement {
         if (cp.g) this._hits.push({ poly: q, g: cp.g });
       }
       const top = [P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)];
-      poly(top, col(cp.t, alpha, b.kind === "fan" ? 0.8 : 1.08), cp.ghost ? edge : "rgba(255,255,255,0.4)", 0.8);
+      if (cp.est) ctx.setLineDash([4, 3]); // temperatura stimata: bordo tratteggiato
+      poly(top, col(cp.t, alpha, b.kind === "fan" ? 0.8 : 1.08), cp.ghost ? edge : cp.est ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.4)", 0.8);
+      ctx.setLineDash([]);
       if (cp.g) this._hits.push({ poly: top, g: cp.g });
 
       if (b.kind === "sink") {
