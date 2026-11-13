@@ -9,7 +9,8 @@
  *   mode: 3d             # 3d | 2d
  *   title: Temperature   # opzionale
  *   refresh: 30          # secondi tra un aggiornamento e l'altro
- *   max_rows: 12         # solo iLO senza mappa (iLO 2): righe dell'elenco
+ *   max_rows: 0          # righe dell'elenco (0 = tutte, con scorrimento)
+ *   mobile_list: true    # su schermi stretti (telefono) mostra l'elenco al posto della mappa
  *   spin: false          # vista 3D che ruota da sola
  *
  * Vista 3D: trascina in orizzontale per ruotare, in verticale per inclinare,
@@ -57,7 +58,8 @@ class HpeIloThermalCard extends HTMLElement {
         },
         { name: "title", selector: { text: {} } },
         { name: "refresh", selector: { number: { min: 10, max: 600, unit_of_measurement: "s" } } },
-        { name: "max_rows", selector: { number: { min: 3, max: 60 } } },
+        { name: "max_rows", selector: { number: { min: 0, max: 60 } } },
+        { name: "mobile_list", selector: { boolean: {} } },
       ],
       computeLabel: (s) =>
         ({
@@ -65,7 +67,8 @@ class HpeIloThermalCard extends HTMLElement {
           mode: "Vista",
           title: "Titolo",
           refresh: "Aggiornamento",
-          max_rows: "Righe elenco (iLO senza mappa)",
+          max_rows: "Righe elenco (0 = tutte)",
+          mobile_list: "Elenco su telefono",
         })[s.name],
     };
   }
@@ -113,6 +116,8 @@ class HpeIloThermalCard extends HTMLElement {
     this._syncSpin();
     if (this._hass) this._restart();
     this._ro = new ResizeObserver(() => this._draw());
+    this._onResize = () => this._update();
+    window.addEventListener("resize", this._onResize);
     this._ro.observe(this._wrap);
   }
 
@@ -120,6 +125,7 @@ class HpeIloThermalCard extends HTMLElement {
     clearInterval(this._timer);
     this._timer = null;
     if (this._ro) this._ro.disconnect();
+    if (this._onResize) window.removeEventListener("resize", this._onResize);
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = null;
   }
@@ -174,7 +180,8 @@ class HpeIloThermalCard extends HTMLElement {
         .legend { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 0.75rem; color: var(--secondary-text-color); }
         .bar { flex: 1; height: 8px; border-radius: 4px;
           background: linear-gradient(90deg, ${STOPS.map(([t, c]) => `rgb(${c}) ${t * 100}%`).join(",")}); }
-        .list { display: grid; gap: 6px; margin-top: 10px; }
+        .list { display: grid; gap: 6px; margin-top: 10px; max-height: min(60vh, 440px); overflow-y: auto;
+          padding-right: 4px; overscroll-behavior: contain; }
         .row { display: grid; grid-template-columns: minmax(0, 1fr) 3.2em; gap: 8px; align-items: center; font-size: 0.85rem; }
         .row .name { color: var(--primary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .row .track { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--divider-color); overflow: hidden; }
@@ -269,15 +276,19 @@ class HpeIloThermalCard extends HTMLElement {
       .join(" · ");
     for (const b of this._toggle.querySelectorAll("button")) b.classList.toggle("on", b.dataset.m === this._mode);
     this._canvas.classList.toggle("rot", this._mode === "3d");
-    this._toggle.style.display = d.has_map ? "" : "none";
-    this._wrap.style.display = d.has_map ? "" : "none";
-    this._list.style.display = d.has_map ? "none" : "";
-    if (d.has_map) this._draw();
+    // telefono: elenco con scorrimento (la mappa 3D su schermi stretti è poco leggibile)
+    const narrow = this._config.mobile_list !== false && window.matchMedia("(max-width: 640px)").matches;
+    const map = d.has_map && !narrow;
+    this._toggle.style.display = map ? "" : "none";
+    this._wrap.style.display = map ? "" : "none";
+    this._list.style.display = map ? "none" : "";
+    this._legend.style.display = map ? "" : "none";
+    if (map) this._draw();
     else this._drawList(temps);
   }
 
   _drawList(temps) {
-    const max = Number(this._config.max_rows) || 12;
+    const max = Number(this._config.max_rows) || Infinity;
     const rows = [...temps].sort((a, b) => (heat(b) ?? 0) - (heat(a) ?? 0)).slice(0, max);
     this._list.innerHTML = rows
       .map((s) => {
@@ -337,7 +348,10 @@ class HpeIloThermalCard extends HTMLElement {
     const width = this._wrap.clientWidth;
     if (!width) return;
     const is3d = this._mode === "3d";
-    const height = Math.round(width * (is3d ? 0.66 : 0.72));
+    // tutta visibile senza scorrere: altezza limitata allo spazio della finestra
+    // (intestazione, legenda e cornice del popup occupano circa 230 px)
+    const maxH = Math.max(220, window.innerHeight - 230);
+    const height = Math.round(Math.min(width * (is3d ? 0.66 : 0.72), maxH));
     const dpr = window.devicePixelRatio || 1;
     const cv = this._canvas;
     if (cv.width !== Math.round(width * dpr) || cv.height !== Math.round(height * dpr)) {

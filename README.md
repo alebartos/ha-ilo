@@ -39,7 +39,8 @@ type: custom:hpe-ilo-thermal-card
 server: OMV        # nome del server nell'integrazione (opzionale: il primo)
 mode: 3d           # 3d | 2d
 refresh: 30        # secondi
-max_rows: 12       # solo elenco (iLO senza mappa)
+max_rows: 0        # righe dell'elenco (0 = tutte, con scorrimento)
+mobile_list: true  # su telefono mostra l'elenco al posto della mappa
 spin: false        # vista 3D che ruota da sola
 ```
 
