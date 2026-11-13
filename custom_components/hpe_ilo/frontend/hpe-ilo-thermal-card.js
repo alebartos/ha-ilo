@@ -610,9 +610,10 @@ class HpeIloThermalCard extends HTMLElement {
       // dal fronte: riser 1 a destra, riser 2 al centro accanto agli alimentatori
       const x0 = r === 1 ? MW - 136 : clamp(psEnd + 4, 4, MW - 290);
       const x1 = x0 + (r === 1 ? 130 : 150);
-      // gabbia a L: piastra superiore a L, staffa posteriore e levette blu (semitrasparente)
+      // gabbia a L: pannello laterale, piastra superiore a L, staffa e levette blu (semitrasparente)
       const C = (rgb, ...a) => Object.assign(B(...a), { rgb });
       add(`Riser ${r}`, [], [
+        C([30, 33, 38], x0, x0 + 3, MD - 236, MD - 8, 4, 82, "rcage"),
         C([38, 42, 50], x0, x0 + 40, MD - 240, MD - 4, 82, 85, "rcage"),
         C([38, 42, 50], x0 + 40, x1, MD - 44, MD - 4, 82, 85, "rcage"),
         C([150, 156, 165], x0 + 3, x1, MD - 6, MD - 3, 4, 82, "rcage"),
